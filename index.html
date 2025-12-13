@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>My Tools</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Tools JS -->
+  <script defer src="tools.js"></script>
+</head>
+
+<body class="bg-gray-100 h-screen flex">
+
+  <!-- Sidebar -->
+  <aside class="w-64 bg-gray-900 text-white flex flex-col p-5">
+    <h2 class="text-xl font-bold mb-6 border-b border-gray-700 pb-2">
+      🧰 My Tools
+    </h2>
+
+    <ul id="toolList" class="space-y-2 text-sm">
+      <li>
+        <button
+          onclick="loadHandwrittenTool()"
+          class="w-full text-left px-3 py-2 rounded hover:bg-gray-700 transition"
+        >
+          ✍ Handwritten Notes Prompt
+        </button>
+      </li>
+
+      <li>
+        <button
+            onclick="loadImageToPdfTool()"
+            class="w-full text-left px-3 py-2 rounded hover:bg-gray-700 transition"
+        >
+            📄 A4 Images → PDF
+        </button>
+        </li>
+
+      <!-- Future tools go here -->
+    </ul>
+  </aside>
+
+  <!-- Main Content -->
+  <main
+    id="toolContainer"
+    class="flex-1 p-6 overflow-y-auto"
+  >
+    <div class="text-gray-500 text-center mt-20">
+      Select a tool from the sidebar 👈
+    </div>
+  </main>
+
+</body>
+</html>
