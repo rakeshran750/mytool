@@ -1,3 +1,147 @@
+// --------------------
+// UNIVERSAL DEPENDENCY LOADER (JS + CSS)
+// - Loads in order
+// - Dedupes (won't load same URL twice)
+// - Supports global check (so you can skip if already present)
+// --------------------
+const DepLoader = (() => {
+  const loaded = new Map(); // url -> Promise
+
+  function loadScript(url, { async = false, defer = true, check } = {}) {
+    // If a "check" function says it's already available, skip.
+    if (typeof check === "function" && check()) return Promise.resolve();
+
+    // Deduplicate by URL
+    if (loaded.has(url)) return loaded.get(url);
+
+    const p = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = url;
+      s.async = async; // keep false to preserve order
+      s.defer = defer;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error(`Failed to load script: ${url}`));
+      document.head.appendChild(s);
+    });
+
+    loaded.set(url, p);
+    return p;
+  }
+
+  function loadCss(url) {
+    if (loaded.has(url)) return loaded.get(url);
+
+    const p = new Promise((resolve, reject) => {
+      const l = document.createElement("link");
+      l.rel = "stylesheet";
+      l.href = url;
+      l.onload = () => resolve();
+      l.onerror = () => reject(new Error(`Failed to load css: ${url}`));
+      document.head.appendChild(l);
+    });
+
+    loaded.set(url, p);
+    return p;
+  }
+
+  async function loadAll(manifest = []) {
+    // Load strictly in sequence (dependency-safe)
+    for (const item of manifest) {
+      if (!item) continue;
+
+      if (typeof item === "string") {
+        await loadScript(item);
+        continue;
+      }
+
+      if (item.type === "css") {
+        await loadCss(item.url);
+      } else {
+        await loadScript(item.url, item);
+      }
+    }
+  }
+
+  return { loadScript, loadCss, loadAll };
+})();
+
+
+// --------------------
+// YOUR UNIVERSAL "load everything" function
+// (add whatever dependencies you want here)
+// --------------------
+async function loadUniversalDeps() {
+  await DepLoader.loadAll([
+    // jsPDF
+    {
+      url: "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+      check: () => !!(window.jspdf && window.jspdf.jsPDF),
+    },
+
+    // PDF.js
+    {
+      url: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js",
+      check: () => !!window.pdfjsLib,
+    },
+
+    // PDF.js worker config (must be set AFTER pdfjsLib loads)
+    {
+      url: "data:text/javascript," + encodeURIComponent(`
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js";
+      `),
+      check: () =>
+        !!(window.pdfjsLib &&
+           window.pdfjsLib.GlobalWorkerOptions &&
+           window.pdfjsLib.GlobalWorkerOptions.workerSrc),
+    },
+
+    // SortableJS
+    {
+      url: "https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js",
+      check: () => !!window.Sortable,
+    },
+
+    // pdf-lib
+    {
+      url: "https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js",
+      check: () => !!window.PDFLib,
+    },
+  ]);
+}
+
+
+// --------------------
+// Example usage:
+// when universal deps loaded, then run your tool init
+// --------------------
+async function bootApp() {
+  try {
+    await loadUniversalDeps();
+
+    // Now ALL dependencies exist:
+    // window.jspdf.jsPDF, window.pdfjsLib, window.Sortable, window.PDFLib
+
+    // call whichever tool you want
+    // loadPdfPageOrganizerTool();
+    // loadHandwrittenTool();
+    // etc.
+
+    console.log("All dependencies loaded ✅");
+  } catch (err) {
+    console.error(err);
+    alert(err.message);
+  }
+}
+
+// Run on page load
+window.addEventListener("DOMContentLoaded", bootApp);
+
+
+
+
+
+
 function loadHandwrittenTool() {
   const container = document.getElementById("toolContainer");
 
@@ -265,15 +409,169 @@ async function generatePdfFromImages() {
   pdf.save("merged-a4-notes.pdf");
 }
 
-// --------------------
-// LOAD jsPDF
-// --------------------
-function loadJsPdf() {
-  return new Promise((resolve) => {
-    const script = document.createElement("script");
-    script.src =
-      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-    script.onload = resolve;
-    document.body.appendChild(script);
+// // --------------------
+// // LOAD jsPDF
+// // --------------------
+// function loadJsPdf() {
+//   return new Promise((resolve) => {
+//     const script = document.createElement("script");
+//     script.src =
+//       "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+//     script.onload = resolve;
+//     document.body.appendChild(script);
+//   });
+// }
+
+
+
+/**
+ * Tool #3: PDF Page Organizer (Upload -> Preview all pages -> Reorder -> Export/Print)
+ */
+function loadPdfPageOrganizerTool() {
+  const root = document.getElementById("toolRoot");
+  root.innerHTML = `
+    <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+      <input id="pdfInput" type="file" accept="application/pdf" />
+      <button id="exportBtn" disabled>Export Reordered PDF</button>
+      <button id="printBtn" disabled>Print Reordered PDF</button>
+      <span id="status" style="opacity:0.8;"></span>
+    </div>
+
+    <div style="margin-top:14px;">
+      <div id="thumbGrid"
+           style="display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                  gap:12px; align-items:start;">
+      </div>
+    </div>
+  `;
+
+  const pdfInput = document.getElementById("pdfInput");
+  const exportBtn = document.getElementById("exportBtn");
+  const printBtn = document.getElementById("printBtn");
+  const status = document.getElementById("status");
+  const thumbGrid = document.getElementById("thumbGrid");
+
+  let originalPdfBytes = null;
+  let pageCount = 0;
+
+  // Enable drag reorder
+  const sortable = new Sortable(thumbGrid, {
+    animation: 150,
+    ghostClass: "ghost",
   });
+
+  pdfInput.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    status.textContent = "Loading PDF...";
+    exportBtn.disabled = true;
+    printBtn.disabled = true;
+    thumbGrid.innerHTML = "";
+
+    originalPdfBytes = await file.arrayBuffer();
+
+    // Render thumbnails with PDF.js
+    const pdf = await pdfjsLib.getDocument({ data: originalPdfBytes }).promise;
+    pageCount = pdf.numPages;
+
+    for (let i = 1; i <= pageCount; i++) {
+      const page = await pdf.getPage(i);
+
+      // thumbnail scale
+      const viewport = page.getViewport({ scale: 0.35 });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const ctx = canvas.getContext("2d");
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      const card = document.createElement("div");
+      card.style.cssText = `
+        border:1px solid #ddd; border-radius:10px; padding:10px; background:#fff;
+        display:flex; flex-direction:column; gap:8px; cursor:grab;
+      `;
+      card.dataset.pageIndex = String(i - 1); // 0-based for pdf-lib
+
+      const label = document.createElement("div");
+      label.textContent = `Page ${i}`;
+      label.style.cssText = "font-weight:600; font-size:13px;";
+
+      card.appendChild(label);
+      card.appendChild(canvas);
+      thumbGrid.appendChild(card);
+    }
+
+    status.textContent = `Loaded ${pageCount} pages. Drag to reorder.`;
+    exportBtn.disabled = false;
+    printBtn.disabled = false;
+  });
+
+  exportBtn.addEventListener("click", async () => {
+    if (!originalPdfBytes) return;
+
+    status.textContent = "Building reordered PDF...";
+    const reorderedBytes = await buildReorderedPdf(originalPdfBytes, thumbGrid);
+
+    const blob = new Blob([reorderedBytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "reordered.pdf";
+    a.click();
+
+    status.textContent = "Exported reordered.pdf";
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  });
+
+  printBtn.addEventListener("click", async () => {
+    if (!originalPdfBytes) return;
+
+    status.textContent = "Preparing print PDF...";
+    const reorderedBytes = await buildReorderedPdf(originalPdfBytes, thumbGrid);
+
+    // Print via hidden iframe
+    const blob = new Blob([reorderedBytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.src = url;
+    document.body.appendChild(iframe);
+
+    iframe.onload = () => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+
+      // cleanup later
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+        URL.revokeObjectURL(url);
+      }, 30_000);
+      status.textContent = "Print dialog opened.";
+    };
+  });
+
+  async function buildReorderedPdf(pdfBytes, gridEl) {
+    const { PDFDocument } = PDFLib;
+
+    const srcDoc = await PDFDocument.load(pdfBytes);
+    const outDoc = await PDFDocument.create();
+
+    // Read new order from DOM
+    const cards = Array.from(gridEl.querySelectorAll("div[data-page-index]"));
+    const order = cards.map((c) => parseInt(c.dataset.pageIndex, 10));
+
+    // Copy pages in that order
+    const copiedPages = await outDoc.copyPages(srcDoc, order);
+    copiedPages.forEach((p) => outDoc.addPage(p));
+
+    return await outDoc.save();
+  }
 }
+
+
+
