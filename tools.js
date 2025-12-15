@@ -79,10 +79,10 @@ async function loadUniversalDeps() {
     },
 
     // PDF.js
-    {
-      url: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js",
-      check: () => !!window.pdfjsLib,
-    },
+    // {
+    //   url: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js",
+    //   check: () => !!window.pdfjsLib,
+    // },
 
     // PDF.js worker config (must be set AFTER pdfjsLib loads)
     {
@@ -572,6 +572,7 @@ function loadPdfPageOrganizerTool() {
     return await outDoc.save();
   }
 }
+
 
 
 
